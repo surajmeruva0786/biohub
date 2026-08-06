@@ -1,0 +1,343 @@
+Dataset Description
+Dataset Description
+Each sample in this dataset is a short 3D+time video of fluorescently labeled zebrafish embryo cells, stored as a Zarr v3 volume. Your task is to detect cells in each timepoint and link them across time, producing a tracking graph of nodes (cell detections) and edges (temporal links between cells).
+
+Data Format
+Image volumes are stored as .zarr directories. Each contains a single array at path 0/ with shape (T, Z, Y, X) — typically (100, 64, 256, 256) in uint16 format. Chunks are one timepoint each : (1, 64, 256, 256), compressed with blosc/zstd. The chunk for timepoint t is located at 0/c/{t}/0/0/0. Array metadata (shape, dtype, codecs) is in 0/zarr.json.
+
+The physical voxel scale is z=1.625, y=0.40625, x=0.40625 µm/voxel.
+
+Ground Truth (Training Only)
+Ground-truth annotations are provided as .geff directories (a graph exchange format also built on Zarr v3). Each .geff contains:
+
+nodes/ids — node ID array
+nodes/props/{t,z,y,x}/values — integer centroid coordinates per node (in voxels)
+edges/ids — edge array of shape (N, 2) with columns (source_id, target_id)
+Annotations are sparse — not every cell in every frame is labeled. The estimated_number_of_nodes field in the .geff metadata (zarr.json) provides an estimate of the true total cell count per sample.
+
+All arrays within .geff use zstd compression.
+
+Embryo Identity
+Folder names follow the pattern {embryo_id}_{field_of_view} (e.g., 44b6_0049_0438_1330_1273). The first segment identifies which embryo the sample comes from. Multiple samples may share the same embryo. Train and test sets are embryo-disjoint — no embryo appears in both.
+
+Files
+train/ - Training samples. Each sample has a paired .zarr (image volume) and .geff (ground-truth tracking graph).
+test/ - Example test samples (copies from train). Contains .zarr image volumes only — no ground truth is provided. When a notebook is submitted for rerun, a new hidden test set is swapped in. The size of the hidden test set is approximately the same size as the training dataset.
+sample_submission.csv - A valid submission file demonstrating the correct format.
+Files
+24886 files
+
+Size
+87.61 GB
+
+Type
+json, csv + 1 other
+
+License
+CC0: Public Domain
+
+sample_submission.csv(890 B)
+
+10 of 10 columns
+
+
+id
+
+dataset
+
+row_type
+
+node_id
+
+t
+
+z
+
+y
+
+x
+
+source_id
+
+target_id
+Label	Count
+0.00 - 1.90	2
+1.90 - 3.80	2
+3.80 - 5.70	2
+5.70 - 7.60	2
+7.60 - 9.50	2
+9.50 - 11.40	2
+11.40 - 13.30	2
+13.30 - 15.20	2
+15.20 - 17.10	2
+17.10 - 19.00	2
+0
+19
+4
+
+unique values
+node
+60%
+edge
+40%
+Label	Count
+-1.00 - -0.60	8
+1.00 - 1.40	4
+1.80 - 2.20	4
+2.60 - 3.00	4
+-1
+3
+Label	Count
+-1.00 - -0.70	8
+-0.10 - 0.20	4
+0.80 - 1.10	4
+1.70 - 2.00	4
+-1
+2
+Label	Count
+-1.00 - 2.30	8
+28.70 - 32.00	12
+-1
+32
+Label	Count
+-1.00 - 11.90	8
+115.10 - 128.00	12
+-1
+128
+Label	Count
+-1.00 - 11.90	8
+115.10 - 128.00	12
+-1
+128
+Label	Count
+-1.00 - -0.70	12
+0.80 - 1.10	4
+1.70 - 2.00	4
+-1
+2
+Label	Count
+-1.00 - -0.60	12
+1.80 - 2.20	4
+2.60 - 3.00	4
+-1
+3
+0
+44b6_0113de3b
+node
+1
+0
+32
+128
+128
+-1
+-1
+1
+44b6_0113de3b
+node
+2
+1
+32
+128
+128
+-1
+-1
+2
+44b6_0113de3b
+node
+3
+2
+32
+128
+128
+-1
+-1
+3
+44b6_0113de3b
+edge
+-1
+-1
+-1
+-1
+-1
+1
+2
+4
+44b6_0113de3b
+edge
+-1
+-1
+-1
+-1
+-1
+2
+3
+5
+44b6_0b24845f
+node
+1
+0
+32
+128
+128
+-1
+-1
+6
+44b6_0b24845f
+node
+2
+1
+32
+128
+128
+-1
+-1
+7
+44b6_0b24845f
+node
+3
+2
+32
+128
+128
+-1
+-1
+8
+44b6_0b24845f
+edge
+-1
+-1
+-1
+-1
+-1
+1
+2
+9
+44b6_0b24845f
+edge
+-1
+-1
+-1
+-1
+-1
+2
+3
+10
+6bba_05b6850b
+node
+1
+0
+32
+128
+128
+-1
+-1
+11
+6bba_05b6850b
+node
+2
+1
+32
+128
+128
+-1
+-1
+12
+6bba_05b6850b
+node
+3
+2
+32
+128
+128
+-1
+-1
+13
+6bba_05b6850b
+edge
+-1
+-1
+-1
+-1
+-1
+1
+2
+14
+6bba_05b6850b
+edge
+-1
+-1
+-1
+-1
+-1
+2
+3
+15
+6bba_05db0fb1
+node
+1
+0
+32
+128
+128
+-1
+-1
+16
+6bba_05db0fb1
+node
+2
+1
+32
+128
+128
+-1
+-1
+17
+6bba_05db0fb1
+node
+3
+2
+32
+128
+128
+-1
+-1
+18
+6bba_05db0fb1
+edge
+-1
+-1
+-1
+-1
+-1
+1
+2
+19
+6bba_05db0fb1
+edge
+-1
+-1
+-1
+-1
+-1
+2
+3
+No more data to show
+Data Explorer
+87.61 GB
+
+test
+
+train
+
+sample_submission.csv
+
+Summary
+24.9k files
+
+10 columns
+
+
+Download All
+Metadata
+License
+CC0: Public Domain
