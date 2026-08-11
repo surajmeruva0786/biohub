@@ -2,9 +2,9 @@
 # Competition dataset (Biohub - Cell Tracking During Development)
 #
 # NOT tracked in git. The archive is ~81.4 GB and the extracted tree is
-# 81.59 GB across 24,886 files. GitHub rejects individual files over 100 MB
-# and does not host repositories at this scale. The data is obtained from
-# Kaggle instead -- see DATASET.md for the layout and verification procedure.
+# 81.59 GB across 24,886 files. No single file is large (max 5.91 MB), but
+# GitHub does not host repositories at this total size. The data is obtained
+# from Kaggle instead -- see DATASET.md for layout and verification.
 # ---------------------------------------------------------------------------
 biohub-cell-tracking-during-development.zip
 biohub-cell-tracking-during-development/
