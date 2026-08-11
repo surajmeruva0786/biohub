@@ -62,11 +62,43 @@ smoothing widths and the peak-separation footprint are specified in µm and
 converted per axis — the footprint is a flat ellipsoid, wide in x/y and only a
 few voxels tall in z.
 
-### Linking gate
+### Linking gate and drift compensation
 
 Ground-truth cells move **1.9 µm per frame median, p95 3.8, p99 5.3** (measured
-over 10,572 GT edges). A 6 µm gate covers essentially all real motion while
-staying inside the metric's 7 µm matching threshold.
+over 10,572 GT edges).
+
+Much of that motion is embryo-wide drift rather than independent cell movement —
+typically ~1.6/1.2/0.8 µm in (z, y, x), comparable to the median displacement
+itself. Linking therefore runs two passes: a first assignment estimates the
+frame's median displacement, and the second re-assigns with that global motion
+removed, so the distance budget discriminates between neighbouring cells instead
+of being spent on drift.
+
+Gate width and drift compensation are partly redundant, and tuning them together
+matters:
+
+| gate (µm) | drift off | drift on |
+| --- | --- | --- |
+| 5.0 | 0.7490 | 0.7595 |
+| 6.0 | 0.7584 | **0.7658** |
+| 7.0 | 0.7623 | 0.7642 |
+| 8.0 | 0.7311 | 0.7412 |
+
+Without drift compensation the optimum is a loose 7 µm gate; with it the optimum
+tightens to 6 µm and scores higher. Beyond 8 µm the score collapses (0.59 at
+10 µm) as links jump between neighbouring cells.
+
+### Gap closing
+
+The metric only credits edges spanning exactly `t → t+1`, so a cell missed in a
+single frame costs *two* edges and cannot be bridged directly. Instead, a track
+ending at `t` and one resuming at `t+2` within twice the gate are joined by a
+synthetic node interpolated at their midpoint in frame `t+1`, producing two
+well-formed edges.
+
+This is worth most exactly where the baseline is weakest — sample
+`44b6_0c582fdc` went from 0.476 to 0.562 edge Jaccard — and is roughly neutral
+on samples that already track well.
 
 ## Reproducing
 

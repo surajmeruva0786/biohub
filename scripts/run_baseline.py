@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from biohub.detect import detect_volume
 from biohub.evaluate import score_sample, summarise_rows
 from biohub.io import estimated_n_nodes, list_samples, open_volume
-from biohub.track import build_graph
+from biohub.track import build_graph, close_gaps
 
 DATA = Path("biohub-cell-tracking-during-development")
 
@@ -28,6 +28,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=8, help="number of train samples")
     ap.add_argument("--max-link-um", type=float, default=6.0)
+    ap.add_argument("--no-gap-closing", action="store_true")
     ap.add_argument("--sigma-um", type=float, default=1.0)
     ap.add_argument("--separation-um", type=float, default=2.5)
     ap.add_argument("--percentile", type=float, default=90.0)
@@ -50,6 +51,10 @@ def main() -> None:
             background_um=args.background_um,
         )
         _, edges = build_graph(coords, times, max_link_um=args.max_link_um)
+        if not args.no_gap_closing:
+            coords, times, edges = close_gaps(
+                coords, times, edges, max_link_um=args.max_link_um
+            )
 
         row = score_sample(
             coords, times, edges, s.geff_path, n_total=estimated_n_nodes(s.geff_path)

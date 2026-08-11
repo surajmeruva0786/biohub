@@ -20,6 +20,9 @@ submission.csv
 *.pth
 *.onnx
 
+# Cached intermediate detections
+cache/
+
 # Python
 __pycache__/
 *.py[cod]

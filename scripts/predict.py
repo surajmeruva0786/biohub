@@ -12,12 +12,14 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from biohub.detect import detect_volume
 from biohub.io import list_samples, open_volume
 from biohub.submit import SubmissionWriter
-from biohub.track import build_graph
+from biohub.track import build_graph, close_gaps
 
 
 def main() -> None:
@@ -29,6 +31,7 @@ def main() -> None:
     )
     ap.add_argument("--out", default="submission.csv")
     ap.add_argument("--max-link-um", type=float, default=6.0)
+    ap.add_argument("--no-gap-closing", action="store_true")
     ap.add_argument("--sigma-um", type=float, default=1.0)
     ap.add_argument("--separation-um", type=float, default=2.5)
     ap.add_argument("--percentile", type=float, default=90.0)
@@ -52,6 +55,11 @@ def main() -> None:
                 background_um=args.background_um,
             )
             node_ids, edges = build_graph(coords, times, max_link_um=args.max_link_um)
+            if not args.no_gap_closing:
+                coords, times, edges = close_gaps(
+                    coords, times, edges, max_link_um=args.max_link_um
+                )
+                node_ids = np.arange(1, len(coords) + 1, dtype=np.int64)
             w.add_sample(s.name, coords, times, node_ids, edges)
             print(
                 f"[{i}/{len(samples)}] {s.name:20} nodes={len(coords):6d} "

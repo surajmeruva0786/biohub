@@ -18,15 +18,39 @@ def to_physical(coords: np.ndarray) -> np.ndarray:
     return coords.astype(np.float64) * np.asarray(SCALE)
 
 
+def _assign(src: np.ndarray, dst: np.ndarray, max_link_um: float) -> np.ndarray:
+    """Optimal one-to-one assignment between two µm point sets, gated by distance."""
+    cost = np.linalg.norm(src[:, None, :] - dst[None, :, :], axis=-1)
+    gated = np.where(cost > max_link_um, 1e6, cost)
+    rows, cols = linear_sum_assignment(gated)
+    keep = cost[rows, cols] <= max_link_um
+    return np.stack([rows[keep], cols[keep]], axis=1).astype(np.int64)
+
+
+def estimate_drift(
+    src: np.ndarray, dst: np.ndarray, pairs: np.ndarray
+) -> np.ndarray:
+    """Median displacement of matched pairs — a robust global motion estimate."""
+    if len(pairs) < 3:
+        return np.zeros(3)
+    return np.median(dst[pairs[:, 1]] - src[pairs[:, 0]], axis=0)
+
+
 def link_consecutive(
     src_coords: np.ndarray,
     dst_coords: np.ndarray,
     max_link_um: float = 6.0,
+    compensate_drift: bool = True,
 ) -> np.ndarray:
     """Match detections in one frame to the next by minimum total distance.
 
     Candidate pairs beyond *max_link_um* are never linked. Solves a rectangular
     assignment restricted to in-gate pairs, so every match is one-to-one.
+
+    When *compensate_drift* is set, a first assignment estimates the frame's
+    median displacement and the second runs with that global motion removed.
+    Embryo-wide drift otherwise consumes the distance budget that should be
+    discriminating between neighbouring cells.
 
     Returns
     -------
@@ -39,21 +63,19 @@ def link_consecutive(
     src = to_physical(src_coords)
     dst = to_physical(dst_coords)
 
-    # Restrict the cost matrix to in-gate pairs; a dense N x N over ~400
-    # detections is cheap, but the gate is what keeps assignments sensible.
-    cost = np.linalg.norm(src[:, None, :] - dst[None, :, :], axis=-1)
-    gated = cost.copy()
-    gated[gated > max_link_um] = 1e6
-
-    rows, cols = linear_sum_assignment(gated)
-    keep = cost[rows, cols] <= max_link_um
-    return np.stack([rows[keep], cols[keep]], axis=1).astype(np.int64)
+    pairs = _assign(src, dst, max_link_um)
+    if compensate_drift:
+        drift = estimate_drift(src, dst, pairs)
+        if np.any(drift):
+            pairs = _assign(src + drift, dst, max_link_um)
+    return pairs
 
 
 def build_graph(
     coords: np.ndarray,
     times: np.ndarray,
     max_link_um: float = 6.0,
+    compensate_drift: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Link a full detection set into a tracking graph.
 
@@ -83,7 +105,9 @@ def build_graph(
         if t + 1 not in by_t:
             continue
         src_idx, dst_idx = by_t[t], by_t[t + 1]
-        pairs = link_consecutive(coords[src_idx], coords[dst_idx], max_link_um)
+        pairs = link_consecutive(
+            coords[src_idx], coords[dst_idx], max_link_um, compensate_drift
+        )
         if len(pairs):
             edges.append(
                 np.stack(
@@ -95,6 +119,77 @@ def build_graph(
     if not edges:
         return node_ids, np.zeros((0, 2), dtype=np.int64)
     return node_ids, np.concatenate(edges)
+
+
+def close_gaps(
+    coords: np.ndarray,
+    times: np.ndarray,
+    edges: np.ndarray,
+    max_link_um: float = 7.0,
+    gap_factor: float = 2.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Repair one-frame detection gaps by inserting interpolated nodes.
+
+    The metric only credits edges spanning exactly ``t -> t+1``, so a cell missed
+    in a single frame costs *two* edges rather than one -- a break cannot be
+    bridged directly. Instead, a track ending at ``t`` and one resuming at
+    ``t+2`` within ``gap_factor * max_link_um`` are joined by a synthetic node at
+    their midpoint in frame ``t+1``, yielding two well-formed edges.
+
+    Returns
+    -------
+    (coords, times, edges)
+        Extended detection set and edge list, with ids renumbered 1-based over
+        the combined nodes.
+    """
+    if len(coords) == 0:
+        return coords, times, edges
+
+    n = len(coords)
+    has_out = np.zeros(n, dtype=bool)
+    has_in = np.zeros(n, dtype=bool)
+    if len(edges):
+        has_out[edges[:, 0] - 1] = True
+        has_in[edges[:, 1] - 1] = True
+
+    by_t: dict[int, np.ndarray] = {
+        int(t): np.flatnonzero(times == t) for t in np.unique(times)
+    }
+
+    new_coords, new_times, new_edges = [], [], [edges] if len(edges) else []
+    next_id = n + 1
+
+    for t in sorted(by_t):
+        if t + 2 not in by_t:
+            continue
+        # Track ends at t (no successor) and resumes at t+2 (no predecessor).
+        tail = by_t[t][~has_out[by_t[t]]]
+        head = by_t[t + 2][~has_in[by_t[t + 2]]]
+        if len(tail) == 0 or len(head) == 0:
+            continue
+
+        pairs = _assign(
+            to_physical(coords[tail]),
+            to_physical(coords[head]),
+            max_link_um * gap_factor,
+        )
+        for si, di in pairs:
+            a, b = tail[si], head[di]
+            mid = ((coords[a].astype(np.float64) + coords[b]) / 2.0).round()
+            new_coords.append(mid)
+            new_times.append(t + 1)
+            new_edges.append(
+                np.array([[a + 1, next_id], [next_id, b + 1]], dtype=np.int64)
+            )
+            next_id += 1
+
+    if not new_coords:
+        return coords, times, edges
+
+    coords = np.concatenate([coords, np.asarray(new_coords, dtype=np.int64)])
+    times = np.concatenate([times, np.asarray(new_times, dtype=np.int64)])
+    edges = np.concatenate(new_edges)
+    return coords, times, edges
 
 
 def gt_displacement_stats(gt: dict) -> dict[str, float]:
