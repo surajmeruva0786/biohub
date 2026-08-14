@@ -29,7 +29,11 @@ CACHE = Path("cache/detections")
 
 
 def _detect_one(
-    name: str, zarr_path: str, cache_dir: str, device: str = "cpu"
+    name: str,
+    zarr_path: str,
+    cache_dir: str,
+    device: str = "cpu",
+    params: dict | None = None,
 ) -> tuple[str, int, float]:
     """Worker: detect one sample and write its ``.npz``. Runs in a subprocess."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -43,7 +47,7 @@ def _detect_one(
         return name, len(d["coords"]), 0.0
 
     vol = open_volume(zarr_path)
-    coords, times = detect_volume(vol, vol.shape[0], device=device)
+    coords, times = detect_volume(vol, vol.shape[0], device=device, **(params or {}))
     # Write via a temp file so an interrupted run never leaves a truncated cache.
     # The name must still end in .npz -- savez_compressed appends the suffix
     # itself otherwise, and the rename then targets a file that was never written.
@@ -63,13 +67,30 @@ def main() -> None:
         choices=["cuda", "cpu"],
         help="cuda runs one sample at a time on the GPU; cpu fans out over processes",
     )
+    ap.add_argument("--out", default=str(CACHE), help="cache directory to fill")
+    ap.add_argument("--sigma-um", type=float, default=1.0)
+    ap.add_argument("--separation-um", type=float, default=2.5)
+    ap.add_argument("--percentile", type=float, default=90.0)
+    ap.add_argument("--background-um", type=float, default=4.0)
     args = ap.parse_args()
 
-    CACHE.mkdir(parents=True, exist_ok=True)
+    # Detections depend on these, so a changed setting needs its own directory --
+    # silently mixing two parameter sets in one cache would corrupt every
+    # comparison drawn from it.
+    params = dict(
+        sigma_um=args.sigma_um,
+        min_separation_um=args.separation_um,
+        intensity_percentile=args.percentile,
+        background_um=args.background_um,
+    )
+
+    cache_dir = Path(args.out)
+    cache_dir.mkdir(parents=True, exist_ok=True)
     samples = list_samples(DATA / "train", require_gt=True)[: args.limit]
-    todo = [s for s in samples if not (CACHE / f"{s.name}.npz").exists()]
+    todo = [s for s in samples if not (cache_dir / f"{s.name}.npz").exists()]
     print(
-        f"{len(samples)} samples requested, {len(todo)} to detect (device={args.device})",
+        f"{len(samples)} samples requested, {len(todo)} to detect "
+        f"(device={args.device}, out={cache_dir}, {params})",
         flush=True,
     )
 
@@ -78,7 +99,7 @@ def main() -> None:
         # One GPU, so no fan-out: the device is already the parallel unit, and a
         # second process would only contend for its 4 GB.
         for i, s in enumerate(todo, 1):
-            name, n, secs = _detect_one(s.name, str(s.zarr_path), str(CACHE), "cuda")
+            name, n, secs = _detect_one(s.name, str(s.zarr_path), str(cache_dir), "cuda", params)
             done, left = i, len(todo) - i
             eta = (time.time() - t0) / done * left
             print(
@@ -89,7 +110,9 @@ def main() -> None:
     else:
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             futures = {
-                pool.submit(_detect_one, s.name, str(s.zarr_path), str(CACHE), "cpu"): s.name
+                pool.submit(
+                    _detect_one, s.name, str(s.zarr_path), str(cache_dir), "cpu", params
+                ): s.name
                 for s in todo
             }
             for i, fut in enumerate(as_completed(futures), 1):

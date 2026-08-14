@@ -28,6 +28,12 @@ from biohub.pipeline import Config
 DATA = Path("biohub-cell-tracking-during-development")
 CACHE = Path("cache/detections")
 
+
+# Detection parameters change the detections themselves, so each setting gets its
+# own cache directory: comparing two of them means comparing two directories
+# rather than two `Config`s. The directory is passed explicitly into workers --
+# a module global set in the parent would not survive the fork to a subprocess.
+
 BASE = Config()
 
 # Each variant is one hypothesis, stated as a delta from the baseline so the
@@ -53,12 +59,7 @@ VARIANTS: dict[str, Config] = {
 }
 
 
-def _load(name: str) -> tuple[np.ndarray, np.ndarray]:
-    d = np.load(CACHE / f"{name}.npz")
-    return d["coords"], d["times"]
-
-
-def _score_one(name: str, geff: str, cfg: Config) -> dict:
+def _score_one(name: str, geff: str, cfg: Config, cache: str) -> dict:
     """Worker: run one variant on one sample and return its metric row."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     warnings.filterwarnings("ignore")
@@ -66,18 +67,22 @@ def _score_one(name: str, geff: str, cfg: Config) -> dict:
     from biohub.io import estimated_n_nodes
     from biohub.pipeline import run
 
-    coords, times = _load(name)
-    coords, times, edges = run(coords, times, cfg)
+    d = np.load(Path(cache) / f"{name}.npz")
+    coords, times, edges = run(d["coords"], d["times"], cfg)
     row = score_sample(coords, times, edges, geff, n_total=estimated_n_nodes(geff))
     row["sample"] = name
     return row
 
 
-def evaluate(names, geffs, cfg: Config, workers: int) -> tuple[dict, list[dict]]:
+def evaluate(
+    names, geffs, cfg: Config, workers: int, cache: str = str(CACHE)
+) -> tuple[dict, list[dict]]:
     from biohub.evaluate import summarise_rows
 
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        rows = list(pool.map(_score_one, names, geffs, [cfg] * len(names)))
+        rows = list(
+            pool.map(_score_one, names, geffs, [cfg] * len(names), [cache] * len(names))
+        )
     return summarise_rows(rows), rows
 
 
@@ -88,6 +93,7 @@ def main() -> None:
     ap.add_argument("--variants", nargs="+", default=list(VARIANTS))
     ap.add_argument("--list", action="store_true", help="print variant names and exit")
     ap.add_argument("--per-sample", action="store_true")
+    ap.add_argument("--cache", default=str(CACHE), help="detection cache directory")
     args = ap.parse_args()
 
     if args.list:
@@ -97,17 +103,18 @@ def main() -> None:
 
     from biohub.io import list_samples
 
+    cache = Path(args.cache)
     samples = [
         s
         for s in list_samples(DATA / "train", require_gt=True)
-        if (CACHE / f"{s.name}.npz").exists()
+        if (cache / f"{s.name}.npz").exists()
     ][: args.limit]
     if not samples:
-        raise SystemExit("no cached detections -- run scripts/cache_detections.py first")
+        raise SystemExit(f"no cached detections in {cache} -- run cache_detections.py")
 
     names = [s.name for s in samples]
     geffs = [str(s.geff_path) for s in samples]
-    print(f"{len(samples)} samples, {args.workers} workers\n")
+    print(f"{len(samples)} samples from {cache}, {args.workers} workers\n")
 
     header = f"{'variant':>12}{'edge_J':>10}{'adj_J':>10}{'div_J':>9}{'score':>10}{'recall':>9}{'ratio':>9}{'nodes':>10}"
     print(header)
@@ -118,7 +125,7 @@ def main() -> None:
         if name not in VARIANTS:
             raise SystemExit(f"unknown variant {name!r}; --list to see options")
         t0 = time.time()
-        summ, rows = evaluate(names, geffs, VARIANTS[name], args.workers)
+        summ, rows = evaluate(names, geffs, VARIANTS[name], args.workers, str(cache))
         ratio = float(np.mean([r["total_node_ratio"] for r in rows]))
         nodes = int(np.mean([r["num_pred_nodes"] for r in rows]))
         print(
