@@ -22,7 +22,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from biohub.io import list_samples
+from biohub.io import list_samples, select_samples
 
 DATA = Path("biohub-cell-tracking-during-development")
 CACHE = Path("cache/detections")
@@ -86,7 +86,9 @@ def main() -> None:
 
     cache_dir = Path(args.out)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    samples = list_samples(DATA / "train", require_gt=True)[: args.limit]
+    samples = select_samples(
+        list_samples(DATA / "train", require_gt=True), args.limit
+    )
     todo = [s for s in samples if not (cache_dir / f"{s.name}.npz").exists()]
     print(
         f"{len(samples)} samples requested, {len(todo)} to detect "

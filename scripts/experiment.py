@@ -16,6 +16,7 @@ import argparse
 import sys
 import time
 import warnings
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -94,6 +95,11 @@ def main() -> None:
     ap.add_argument("--list", action="store_true", help="print variant names and exit")
     ap.add_argument("--per-sample", action="store_true")
     ap.add_argument("--cache", default=str(CACHE), help="detection cache directory")
+    ap.add_argument(
+        "--embryo",
+        default=None,
+        help="restrict to one embryo id, to check cross-embryo transfer",
+    )
     args = ap.parse_args()
 
     if args.list:
@@ -101,20 +107,27 @@ def main() -> None:
             print(f"{k:12} {v}")
         return
 
-    from biohub.io import list_samples
+    from biohub.io import embryo_of, list_samples, select_samples
 
     cache = Path(args.cache)
-    samples = [
+    cached = [
         s
         for s in list_samples(DATA / "train", require_gt=True)
         if (cache / f"{s.name}.npz").exists()
-    ][: args.limit]
+    ]
+    # Balanced across embryos: names sort by embryo, so a plain prefix would
+    # measure a setting against one animal while the leaderboard scores it on an
+    # unseen one.
+    samples = select_samples(cached, args.limit)
+    if args.embryo:
+        samples = [s for s in samples if embryo_of(s.name) == args.embryo]
     if not samples:
         raise SystemExit(f"no cached detections in {cache} -- run cache_detections.py")
 
     names = [s.name for s in samples]
     geffs = [str(s.geff_path) for s in samples]
-    print(f"{len(samples)} samples from {cache}, {args.workers} workers\n")
+    counts = Counter(embryo_of(n) for n in names)
+    print(f"{len(samples)} samples from {cache} {dict(counts)}, {args.workers} workers\n")
 
     header = f"{'variant':>12}{'edge_J':>10}{'adj_J':>10}{'div_J':>9}{'score':>10}{'recall':>9}{'ratio':>9}{'nodes':>10}"
     print(header)

@@ -22,6 +22,7 @@ import argparse
 import sys
 import time
 import warnings
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -30,7 +31,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from biohub.features import FEATURE_NAMES
-from biohub.io import list_samples
+from biohub.io import embryo_of, list_samples, select_samples
 
 DATA = Path("biohub-cell-tracking-during-development")
 CACHE = Path("cache/detections")
@@ -142,20 +143,42 @@ def main() -> None:
     ap.add_argument("--max-link-um", type=float, default=6.0)
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--out", default="models/linker.joblib")
+    ap.add_argument(
+        "--holdout-embryo",
+        default=None,
+        help="validate on this embryo only, training on the rest (true transfer test)",
+    )
     ap.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     args = ap.parse_args()
 
-    cached = [
-        s
-        for s in list_samples(DATA / "train", require_gt=True)
-        if (CACHE / f"{s.name}.npz").exists()
-    ]
-    train_s = cached[: args.train]
-    val_s = cached[args.train : args.train + args.val]
+    cached = select_samples(
+        [
+            s
+            for s in list_samples(DATA / "train", require_gt=True)
+            if (CACHE / f"{s.name}.npz").exists()
+        ]
+    )
+    if args.holdout_embryo:
+        # The real split is embryo-disjoint, so validating on a held-out embryo
+        # measures the thing the leaderboard measures: transfer to an unseen
+        # animal. Splitting by sample within shared embryos would not.
+        train_s = [s for s in cached if embryo_of(s.name) != args.holdout_embryo][
+            : args.train
+        ]
+        val_s = [s for s in cached if embryo_of(s.name) == args.holdout_embryo][
+            : args.val
+        ]
+    else:
+        train_s = cached[: args.train]
+        val_s = cached[args.train : args.train + args.val]
     if not train_s or not val_s:
         raise SystemExit(
             f"need at least {args.train + args.val} cached samples, have {len(cached)}"
         )
+    print(
+        f"train embryos {dict(Counter(embryo_of(s.name) for s in train_s))}, "
+        f"val embryos {dict(Counter(embryo_of(s.name) for s in val_s))}"
+    )
 
     X_tr, y_tr = collect(train_s, args.max_link_um, args.workers, "train")
     X_va, y_va = collect(val_s, args.max_link_um, args.workers, "val")

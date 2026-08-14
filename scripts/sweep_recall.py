@@ -31,7 +31,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from biohub.io import list_samples
+from biohub.io import list_samples, select_samples
 
 DATA = Path("biohub-cell-tracking-during-development")
 MATCH_UM = 7.0  # the metric's node-matching radius
@@ -96,7 +96,9 @@ def main() -> None:
     ap.add_argument("--backgrounds", type=float, nargs="+", default=[4.0])
     args = ap.parse_args()
 
-    samples = list_samples(DATA / "train", require_gt=True)[: args.limit]
+    samples = select_samples(
+        list_samples(DATA / "train", require_gt=True), args.limit
+    )
     print(f"{len(samples)} samples, <={args.max_frames} GT frames each, device={args.device}\n")
 
     grid = list(

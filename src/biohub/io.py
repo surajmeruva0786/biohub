@@ -45,6 +45,37 @@ def list_samples(data_dir: Path | str, require_gt: bool = False) -> list[Sample]
     return samples
 
 
+def embryo_of(name: str) -> str:
+    """Embryo id from a sample name: ``44b6_0113de3b`` -> ``44b6``."""
+    return name.split("_", 1)[0]
+
+
+def select_samples(samples: list[Sample], limit: int | None = None) -> list[Sample]:
+    """Take *limit* samples spread evenly across embryos, not the sorted prefix.
+
+    Sample names sort by embryo, so a plain prefix of the training set is drawn
+    entirely from one embryo -- 71 ``44b6`` samples come before any of the 128
+    ``6bba`` ones. Train and test are embryo-disjoint in the real split, so a
+    single-embryo evaluation measures exactly the thing that does not transfer:
+    it would report how well a setting fits one animal, while the leaderboard
+    asks how well it fits an unseen one.
+
+    Round-robin over embryos instead, so any prefix of the result is balanced.
+    """
+    by_embryo: dict[str, list[Sample]] = {}
+    for s in samples:
+        by_embryo.setdefault(embryo_of(s.name), []).append(s)
+
+    out: list[Sample] = []
+    for row in zip(*(by_embryo[k] for k in sorted(by_embryo))):
+        out.extend(row)
+    # Embryos with more samples than the smallest have a tail zip() drops.
+    seen = {s.name for s in out}
+    out.extend(s for s in samples if s.name not in seen)
+
+    return out[:limit] if limit else out
+
+
 def open_volume(zarr_path: Path | str) -> zarr.Array:
     """Open the ``0/`` array of a sample volume without reading any chunks."""
     return zarr.open_group(str(zarr_path), mode="r")["0"]
