@@ -36,11 +36,49 @@ def estimate_drift(
     return np.median(dst[pairs[:, 1]] - src[pairs[:, 0]], axis=0)
 
 
+def _model_cost(
+    src: np.ndarray, dst: np.ndarray, max_link_um: float, model, weight: float
+) -> np.ndarray:
+    """Dense assignment cost from a learned link probability.
+
+    The classifier scores only in-gate candidate pairs, so pairs it never saw
+    keep the sentinel cost and stay unlinkable. Cost is
+    ``-log(p)`` blended with the raw distance: probability decides which of two
+    plausible partners wins, distance still breaks ties among pairs the model
+    finds equally likely.
+    """
+    from .features import build_candidates
+
+    pairs, feats = build_candidates(src, dst, max_link_um)
+    cost = np.full((len(src), len(dst)), np.inf)
+    if len(pairs) == 0:
+        return cost
+
+    p = np.clip(model["model"].predict_proba(feats)[:, 1], 1e-6, 1.0)
+    d = np.linalg.norm(src[pairs[:, 0]] - dst[pairs[:, 1]], axis=1)
+    cost[pairs[:, 0], pairs[:, 1]] = weight * -np.log(p) + (1.0 - weight) * d
+    return cost
+
+
+def _assign_cost(cost: np.ndarray) -> np.ndarray:
+    """Optimal assignment over a cost matrix where ``inf`` marks a forbidden pair."""
+    finite = np.isfinite(cost)
+    if not finite.any():
+        return np.zeros((0, 2), dtype=np.int64)
+
+    gated = np.where(finite, cost, 1e6)
+    rows, cols = linear_sum_assignment(gated)
+    keep = finite[rows, cols]
+    return np.stack([rows[keep], cols[keep]], axis=1).astype(np.int64)
+
+
 def link_consecutive(
     src_coords: np.ndarray,
     dst_coords: np.ndarray,
     max_link_um: float = 6.0,
     compensate_drift: bool = True,
+    model=None,
+    model_weight: float = 1.0,
 ) -> np.ndarray:
     """Match detections in one frame to the next by minimum total distance.
 
@@ -67,7 +105,11 @@ def link_consecutive(
     if compensate_drift:
         drift = estimate_drift(src, dst, pairs)
         if np.any(drift):
-            pairs = _assign(src + drift, dst, max_link_um)
+            src = src + drift
+            pairs = _assign(src, dst, max_link_um)
+
+    if model is not None:
+        pairs = _assign_cost(_model_cost(src, dst, max_link_um, model, model_weight))
     return pairs
 
 
@@ -76,6 +118,8 @@ def build_graph(
     times: np.ndarray,
     max_link_um: float = 6.0,
     compensate_drift: bool = True,
+    model=None,
+    model_weight: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Link a full detection set into a tracking graph.
 
@@ -106,7 +150,8 @@ def build_graph(
             continue
         src_idx, dst_idx = by_t[t], by_t[t + 1]
         pairs = link_consecutive(
-            coords[src_idx], coords[dst_idx], max_link_um, compensate_drift
+            coords[src_idx], coords[dst_idx], max_link_um, compensate_drift,
+            model=model, model_weight=model_weight,
         )
         if len(pairs):
             edges.append(

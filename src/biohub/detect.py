@@ -77,9 +77,18 @@ def detect_volume(
     volume,
     n_timepoints: int,
     per_frame_budget: int | None = None,
+    device: str = "auto",
     **kwargs,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run :func:`detect_timepoint` over every timepoint of a sample.
+
+    Parameters
+    ----------
+    device
+        ``"auto"`` uses CUDA when a device is present and falls back to SciPy
+        otherwise; ``"cpu"`` forces SciPy. The two backends are verified to
+        produce identical detections (``scripts/bench_gpu.py``), so cached
+        results from either are interchangeable.
 
     Returns
     -------
@@ -87,6 +96,16 @@ def detect_volume(
         ``coords`` is ``(N, 3)`` of ``(z, y, x)``; ``times`` is ``(N,)`` of ``t``.
     """
     from .io import read_timepoint
+
+    if device != "cpu":
+        from .detect_gpu import cuda_available, detect_volume_gpu
+
+        if cuda_available():
+            return detect_volume_gpu(
+                volume, n_timepoints, per_frame_budget=per_frame_budget, **kwargs
+            )
+        if device != "auto":
+            raise RuntimeError(f"device={device!r} requested but CUDA is unavailable")
 
     all_coords, all_t = [], []
     for t in range(n_timepoints):
