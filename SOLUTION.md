@@ -103,6 +103,46 @@ smoothing widths and the peak-separation footprint are specified in µm and
 converted per axis — the footprint is a flat ellipsoid, wide in x/y and only a
 few voxels tall in z.
 
+### Detection recall is the binding constraint
+
+The baseline's error budget points away from linking. Over 8 samples it scores
+1311 edge TP against 185 FP and 153 FN — and the weak samples are the
+low-recall ones, not the dense ones:
+
+| Sample | Node recall | Edge Jaccard |
+| --- | --- | --- |
+| `44b6_0db75fae` | 1.000 | 0.993 |
+| `44b6_0113de3b` | 1.000 | 0.923 |
+| `44b6_0b24845f` | 0.902 | 0.556 |
+| `44b6_0c582fdc` | 0.901 | 0.612 |
+
+A missed cell is expensive twice over. The metric only credits `t → t+1` edges,
+so a ground-truth cell with no detection within 7 µm loses both the edge
+entering it *and* the edge leaving it. Worse, the detection that should have
+linked to it does not simply stop — it links to whatever else is in gate, so
+each FN tends to purchase an FP as well. That is why FP and FN are of similar
+size here despite linking being one-to-one.
+
+`scripts/sweep_recall.py` measures recall against detection parameters
+directly. It is cheap for the same reason the ground truth is hard to learn
+from: with ~0.66% of cells annotated, only a handful of frames per sample
+contain any ground truth at all, and recall can only be measured on those — so
+only those are detected. Matching uses the metric's own one-to-one gated
+assignment rather than nearest-neighbour counting, which would overstate recall
+wherever two ground-truth cells share their closest detection.
+
+| DoG sigma (µm) | Node recall | Detections/frame |
+| --- | --- | --- |
+| 0.6 | **0.968** | 590 |
+| 1.0 (baseline) | 0.948 | 448 |
+| 1.5 | 0.897 | 367 |
+| 2.0 | 0.897 | 310 |
+| 2.5 | 0.819 | 261 |
+
+Recall falls monotonically as sigma grows. But a smaller sigma also detects
+more per frame, and every extra node feeds the over-prediction penalty, so this
+is a trade rather than a free win and has to be scored end to end.
+
 ### Linking gate and drift compensation
 
 Ground-truth cells move **1.9 µm per frame median, p95 3.8, p99 5.3** (measured
