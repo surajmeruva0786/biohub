@@ -131,17 +131,41 @@ only those are detected. Matching uses the metric's own one-to-one gated
 assignment rather than nearest-neighbour counting, which would overstate recall
 wherever two ground-truth cells share their closest detection.
 
-| DoG sigma (µm) | Node recall | Detections/frame |
-| --- | --- | --- |
-| 0.6 | **0.968** | 590 |
-| 1.0 (baseline) | 0.948 | 448 |
-| 1.5 | 0.897 | 367 |
-| 2.0 | 0.897 | 310 |
-| 2.5 | 0.819 | 261 |
+| DoG sigma (µm) | Percentile | Node recall | Detections/frame |
+| --- | --- | --- | --- |
+| 0.30 | 90 | 0.976 | 928 |
+| 0.45 | 90 | 0.977 | 765 |
+| **0.60** | **90** | **0.979** | **637** |
+| 0.80 | 90 | 0.972 | 503 |
+| 1.00 (baseline) | 90 | 0.948 | 448 |
+| 1.50 | 90 | 0.897 | 367 |
+| 2.50 | 90 | 0.819 | 261 |
+| 0.60 | 80 | 0.982 | 1463 |
 
-Recall falls monotonically as sigma grows. But a smaller sigma also detects
-more per frame, and every extra node feeds the over-prediction penalty, so this
-is a trade rather than a free win and has to be scored end to end.
+The current sigma of 1.0 is well past the knee — dropping to 0.6 buys 3.1
+points of recall for 1.4× the detections. Going further does not: sigma 0.3
+costs 45% more detections than 0.6 and recalls *less*, and lowering the
+percentile to 80 buys 0.3 points of recall for 2.3× the nodes, which the
+over-prediction penalty cannot repay.
+
+So sigma 0.6 at percentile 90 is the best recall per detection. It is still a
+trade rather than a free win — 637 detections/frame against 448 raises the node
+count that the penalty acts on — so it has to be scored end to end, not adopted
+on recall alone.
+
+### Evaluating on one embryo measures the wrong thing
+
+Sample names sort by embryo, so the first 71 training samples are all `44b6`
+and none of the 128 `6bba` ones appear until after them. Every measurement
+above was originally taken on such a prefix, and so was single-embryo.
+
+That is the one split that cannot be trusted in this competition. Train and
+test are embryo-disjoint, and the public test set is already two `44b6` against
+two `6bba`. A prefix evaluation reports how well a setting fits one animal
+while the leaderboard asks how well it fits an unseen one. `select_samples()`
+round-robins over embryos so any prefix of its output is balanced, and
+`train_linker.py --holdout-embryo` trains on one animal and validates on the
+other — the honest transfer test, given that only two are available.
 
 ### Linking gate and drift compensation
 
