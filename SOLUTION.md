@@ -5,13 +5,13 @@ locally against the official metric.
 
 ## Status
 
-On 24 samples balanced across both embryos the pipeline scores **0.7874**
+On 24 samples balanced across both embryos the pipeline scores **0.7920**
 adjusted edge Jaccard, against **0.4919** for the voxel-percentile baseline on
-the same samples — **+60%**.
+the same samples — **+61%**.
 
 | Question | Answer |
 | --- | --- |
-| Balanced offline score | **0.7874** adjusted edge Jaccard |
+| Balanced offline score | **0.7920** adjusted edge Jaccard |
 | Previous (voxel percentile) | 0.4919 — same samples, same linker |
 | Single-embryo `44b6` score | 0.7674 — measured earlier, not representative |
 | Division Jaccard | 0.000 — forfeit, see [Divisions](#divisions-are-a-low-yield-target) |
@@ -23,10 +23,10 @@ Tuned settings:
 | --- | --- |
 | `threshold` | `otsu` (on peak responses) |
 | `threshold_scale` | 0.4 |
-| `sigma_um` | 1.7 |
+| `sigma_um` | 2.2 |
 | `max_link_um` | 6.0 |
 | `prune_isolated` | yes |
-| `min_track_len` | 5 |
+| `min_track_len` | 3 |
 
 Settled so far:
 
@@ -378,6 +378,25 @@ The direction makes sense: both parameters control how many peaks survive, so
 raising sigma does part of the job `threshold_scale` was previously doing
 alone, and the threshold can relax. They are one budget approached from two
 sides, which is why each retune moves the other.
+
+### A 2D grid rather than alternating sweeps
+
+Since each parameter moves the other's optimum, they were swept jointly.
+Best `min_track_len` per cell, on 24 balanced samples:
+
+| sigma \ scale | 0.25 | 0.4 | 0.7 | 1.0 |
+| --- | --- | --- | --- | --- |
+| 1.3 | — | 0.7649 | 0.7604 | — |
+| 1.7 | 0.7757\* | 0.7874 | 0.7745 | 0.7030 |
+| **2.2** | — | **0.7920** | — | — |
+| 2.5 | — | — | 0.7703 | — |
+
+\* 6 samples only.
+
+The ridge runs diagonally: the best scale falls as sigma rises, which is what
+"one budget approached from two sides" predicts. `min_track_len` follows the
+same logic and relaxes from 8 to 3 as the threshold admits less noise to
+begin with.
 
 ### Ablations at the tuned setting
 
