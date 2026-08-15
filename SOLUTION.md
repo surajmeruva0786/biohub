@@ -5,13 +5,13 @@ locally against the official metric.
 
 ## Status
 
-On 24 samples balanced across both embryos the pipeline scores **0.7745**
+On 24 samples balanced across both embryos the pipeline scores **0.7874**
 adjusted edge Jaccard, against **0.4919** for the voxel-percentile baseline on
-the same samples — **+57%**.
+the same samples — **+60%**.
 
 | Question | Answer |
 | --- | --- |
-| Balanced offline score | **0.7745** adjusted edge Jaccard |
+| Balanced offline score | **0.7874** adjusted edge Jaccard |
 | Previous (voxel percentile) | 0.4919 — same samples, same linker |
 | Single-embryo `44b6` score | 0.7674 — measured earlier, not representative |
 | Division Jaccard | 0.000 — forfeit, see [Divisions](#divisions-are-a-low-yield-target) |
@@ -22,7 +22,7 @@ Tuned settings:
 | Parameter | Value |
 | --- | --- |
 | `threshold` | `otsu` (on peak responses) |
-| `threshold_scale` | 0.7 |
+| `threshold_scale` | 0.4 |
 | `sigma_um` | 1.7 |
 | `max_link_um` | 6.0 |
 | `prune_isolated` | yes |
@@ -359,6 +359,25 @@ Note the node ratio has gone **negative**. The penalty is
 *above* 1.0 — which is why `adj_J` (0.7261) now exceeds the raw `edge_J`
 (0.7180), and why published scores can exceed 1.0. Deliberate under-prediction
 is therefore rewarded, not merely tolerated, as long as edge quality holds.
+
+### sigma and threshold_scale interact
+
+Tuning them separately does not converge. `threshold_scale` was fitted to 0.7
+at sigma 0.6; re-swept at sigma 1.7 the optimum moves to **0.4**, with
+`track5`:
+
+| `threshold_scale` at sigma 1.7 | **adj_J** | Node recall | Node ratio |
+| --- | --- | --- | --- |
+| **0.4** | **0.7874** | 0.918 | −0.01 |
+| 0.55 | 0.7843 | 0.904 | −0.06 |
+| 0.7 | 0.7745 | 0.890 | −0.13 |
+| 0.85 | 0.7443 | 0.846 | −0.20 |
+| 1.0 | 0.7030 | 0.797 | −0.29 |
+
+The direction makes sense: both parameters control how many peaks survive, so
+raising sigma does part of the job `threshold_scale` was previously doing
+alone, and the threshold can relax. They are one budget approached from two
+sides, which is why each retune moves the other.
 
 ### Ablations at the tuned setting
 
