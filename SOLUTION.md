@@ -5,40 +5,46 @@ locally against the official metric.
 
 ## Status
 
-On 40 samples balanced across both embryos the pipeline scores **0.5830**
-adjusted edge Jaccard, using Otsu thresholding, a 5 µm gate, and short-track
-pruning.
+On 24 samples balanced across both embryos the pipeline scores **0.6438**
+adjusted edge Jaccard, against **0.4919** for the voxel-percentile baseline on
+the same samples — **+31%**.
 
 | Question | Answer |
 | --- | --- |
-| Balanced offline score | **0.5830** adjusted edge Jaccard |
+| Balanced offline score | **0.6438** adjusted edge Jaccard |
 | Previous (voxel percentile) | 0.4919 — same samples, same linker |
 | Single-embryo `44b6` score | 0.7674 — measured earlier, not representative |
 | Division Jaccard | 0.000 — forfeit, see [Divisions](#divisions-are-a-low-yield-target) |
 | Submittable? | Not yet — see [Submitting](#submitting-is-notebook-only) |
 
+Tuned settings:
+
+| Parameter | Value |
+| --- | --- |
+| `threshold` | `otsu` (on peak responses) |
+| `threshold_scale` | 0.7 |
+| `sigma_um` | 0.6 |
+| `max_link_um` | 6.0 |
+| `prune_isolated` | yes |
+| `min_track_len` | 8 |
+
 Settled so far:
 
 - **Detection *count* is the dominant term**, through the over-prediction
-  penalty. A fixed voxel percentile over-detects by up to 78× on sparse
-  samples; Otsu over peak responses self-calibrates. Worth **+18.5%**, and it
-  drives the node ratio from +3.33 to +0.04.
-- **Detection recall is now the binding constraint** at 0.872 — edge FP and FN
-  both track it, and the penalty has stopped costing anything.
+  penalty. A fixed voxel percentile over-detects by up to 78x on sparse
+  samples; Otsu over peak responses self-calibrates.
+- **Track-length pruning reverses sign** once the threshold adapts — harmful
+  under a percentile, the largest remaining gain under Otsu.
 - Evaluation must be balanced across embryos; a sorted prefix is single-embryo
   and measures the wrong thing. Not a small correction — it moved the headline
   number by 0.21, and it is what exposed the threshold bug.
-- A 5 µm gate beats 6 and 7. Short-track pruning helps slightly under Otsu
-  (0.5830 against 0.5794), having been neutral-to-harmful before.
 
 Open, in priority order:
 
-1. Sweep `threshold_scale` — recall is the constraint and the node budget is
-   free, so the optimum is below 1.0.
-2. Retune sigma against Otsu; the old sweep was fitted to a threshold that no
+1. Retune sigma against Otsu; the old sweep was fitted to a threshold that no
    longer exists.
-3. Train the linker on the full stratified set and wire it into the cost.
-4. Divisions — currently contributing nothing.
+2. Train the linker on the full stratified set and wire it into the cost.
+3. Divisions — still contributing nothing.
 
 ### Submitting is notebook-only
 
@@ -265,6 +271,59 @@ what `threshold_scale` is for — it slides the cut between keeping every peak
 operating point tunable. At 0.4 detection moves from just under the true count
 to just over it (279 against 258 true, 83 against 64, 878 against 698) without
 reintroducing the fixed-fraction behaviour that caused the 78× blow-up.
+
+### Spending the freed node budget back on recall
+
+Otsu's split sits slightly below the true count, so `threshold_scale` slides
+the cut between keeping every peak (0.0) and Otsu's split (1.0). With the node
+ratio at +0.04 the budget was free, and recall was the binding constraint:
+
+| `threshold_scale` | Node recall | Node ratio | Best adj_J |
+| --- | --- | --- | --- |
+| 0.3 | 0.984 | +0.83 | 0.5883 |
+| 0.5 | 0.979 | +0.40 | 0.6058 |
+| **0.7** | 0.954 | +0.27 | **0.6125** |
+| 1.0 (plain Otsu) | 0.872 | +0.05 | 0.5887 |
+
+The curve falls off on both sides — below 0.7 the penalty grows faster than
+recall improves, above it recall falls faster than the penalty relaxes.
+
+### Track-length pruning reverses sign under Otsu
+
+Against the voxel percentile, pruning short tracks was neutral-to-harmful: at
+length 3 it already cost more in true positives than it returned. Under Otsu it
+is the largest remaining gain.
+
+| `min_track_len` | Edge Jaccard | **adj_J** | Node recall | Node ratio |
+| --- | --- | --- | --- | --- |
+| 3 | 0.6230 | 0.6125 | 0.954 | +0.25 |
+| 5 | 0.6388 | 0.6315 | 0.943 | +0.20 |
+| **8** | 0.6446 | **0.6438** | 0.908 | +0.10 |
+| 12 | 0.6216 | 0.6294 | 0.845 | −0.05 |
+| 16 | 0.5601 | 0.5738 | 0.759 | −0.19 |
+| 30 | 0.3342 | 0.3520 | 0.473 | −0.57 |
+
+The two thresholds fail differently, which is why the same filter helps one and
+not the other. A percentile keeps a fixed fraction of *voxels*, so its surplus
+detections are spread through real tissue and link into plausible-looking
+tracks — length cannot separate them. Otsu's surplus is peaks that only just
+cleared an adaptive cut: isolated noise, which does not persist for eight
+frames. Length becomes a sharp discriminator precisely because the threshold
+adapts.
+
+Past the peak it reverses again — by 12 the filter is eating real tracks
+(recall 0.845) and by 30 the score has halved.
+
+The gate optimum moved with it, from 5 µm back to **6 µm**, for the same
+reason: pruning already removed the short spurious tracks that a tight gate was
+there to suppress.
+
+| Gate (µm) at `track8` | adj_J |
+| --- | --- |
+| 4.5 | 0.6407 |
+| 5.0 | 0.6433 |
+| **6.0** | **0.6438** |
+| 7.0 | 0.6353 |
 
 ### Evaluating on one embryo measures the wrong thing
 
