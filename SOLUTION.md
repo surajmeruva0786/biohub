@@ -5,25 +5,25 @@ locally against the official metric.
 
 ## Status
 
-On 24 samples balanced across both embryos the pipeline scores **0.6438**
+On 24 samples balanced across both embryos the pipeline scores **0.7261**
 adjusted edge Jaccard, against **0.4919** for the voxel-percentile baseline on
-the same samples — **+31%**.
+the same samples — **+48%**.
 
 | Question | Answer |
 | --- | --- |
-| Balanced offline score | **0.6438** adjusted edge Jaccard |
+| Balanced offline score | **0.7261** adjusted edge Jaccard |
 | Previous (voxel percentile) | 0.4919 — same samples, same linker |
 | Single-embryo `44b6` score | 0.7674 — measured earlier, not representative |
 | Division Jaccard | 0.000 — forfeit, see [Divisions](#divisions-are-a-low-yield-target) |
 | Submittable? | Not yet — see [Submitting](#submitting-is-notebook-only) |
 
-Tuned settings:
+Tuned settings (sigma sweep still open — see below):
 
 | Parameter | Value |
 | --- | --- |
 | `threshold` | `otsu` (on peak responses) |
 | `threshold_scale` | 0.7 |
-| `sigma_um` | 0.6 |
+| `sigma_um` | 1.0 — and still rising at the edge of the sweep |
 | `max_link_um` | 6.0 |
 | `prune_isolated` | yes |
 | `min_track_len` | 8 |
@@ -324,6 +324,35 @@ there to suppress.
 | 5.0 | 0.6433 |
 | **6.0** | **0.6438** |
 | 7.0 | 0.6353 |
+
+### Recall is the wrong target once the count is fixed
+
+The sigma optimum moved sharply after Otsu, and in the opposite direction to
+what `sweep_recall.py` indicated. At `threshold_scale` 0.7 with `track8`:
+
+| `sigma_um` | Edge Jaccard | **adj_J** | Node recall | Node ratio |
+| --- | --- | --- | --- | --- |
+| 0.6 | 0.6446 | 0.6438 | 0.908 | +0.10 |
+| 0.8 | 0.6829 | 0.6873 | 0.888 | +0.01 |
+| **1.0** | 0.7180 | **0.7261** | 0.875 | −0.05 |
+
+Node recall *falls* across this range while the score rises by 8 points. The
+recall sweep was the right instrument while a fixed percentile was
+over-detecting by 78× — recall was genuinely the binding constraint then. It is
+the wrong instrument now: recall is necessary but not sufficient, and a small
+sigma buys marginally more detected cells at the cost of ragged centroids that
+link badly. Once the count problem was fixed, linking precision became what
+moves the score, and that prefers larger, smoother blobs.
+
+Two claims committed earlier were wrong as a result, both from reading a curve
+before it was complete: `threshold_scale` 0.5 (0.7 is better) and `sigma` 0.6
+(1.0 is better, and the sweep has not yet found the top).
+
+Note the node ratio has gone **negative**. The penalty is
+`1 − 0.1 · (T_pred − T_true) / T_true`, so under-prediction yields a factor
+*above* 1.0 — which is why `adj_J` (0.7261) now exceeds the raw `edge_J`
+(0.7180), and why published scores can exceed 1.0. Deliberate under-prediction
+is therefore rewarded, not merely tolerated, as long as edge quality holds.
 
 ### Evaluating on one embryo measures the wrong thing
 
