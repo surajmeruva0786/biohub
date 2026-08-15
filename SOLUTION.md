@@ -360,6 +360,25 @@ Note the node ratio has gone **negative**. The penalty is
 (0.7180), and why published scores can exceed 1.0. Deliberate under-prediction
 is therefore rewarded, not merely tolerated, as long as edge quality holds.
 
+### Ablations at the tuned setting
+
+Both linking refinements were tuned under the old threshold, so both were
+re-checked at sigma 1.7. Both still earn their place, and the gate optimum
+holds at 6 µm:
+
+| Variant | adj_J | Delta |
+| --- | --- | --- |
+| **full pipeline** | **0.7745** | — |
+| gate 7 µm | 0.7735 | −0.001 |
+| gap closing off | 0.7615 | −0.013 |
+| gate 5 µm | 0.7650 | −0.010 |
+| drift compensation off | 0.7453 | −0.029 |
+
+Drift compensation is the larger of the two, which is consistent with its
+original justification: embryo-wide motion is comparable in size to a single
+cell's own displacement, so removing it spends the distance budget on drift
+instead of on discriminating between neighbours.
+
 ### Evaluating on one embryo measures the wrong thing
 
 Sample names sort by embryo, so the first 71 training samples are all `44b6`

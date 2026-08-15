@@ -55,6 +55,12 @@ VARIANTS: dict[str, Config] = {
     "t8_gate5": BASE.with_(prune_isolated=True, min_track_len=8, max_link_um=5.0),
     "t8_gate7": BASE.with_(prune_isolated=True, min_track_len=8, max_link_um=7.0),
     "t8_div": BASE.with_(prune_isolated=True, min_track_len=8, divisions=True),
+    # Gate retuned at sigma 1.7, where track5 is the pruning optimum.
+    "t5_gate5": BASE.with_(prune_isolated=True, min_track_len=5, max_link_um=5.0),
+    "t5_gate7": BASE.with_(prune_isolated=True, min_track_len=5, max_link_um=7.0),
+    "t5_gate8": BASE.with_(prune_isolated=True, min_track_len=8, max_link_um=8.0),
+    "t5_nodrift": BASE.with_(prune_isolated=True, min_track_len=5, compensate_drift=False),
+    "t5_nogap": BASE.with_(prune_isolated=True, min_track_len=5, gap_closing=False),
     "divisions": BASE.with_(prune_isolated=True, divisions=True),
     # Detection density: fewer nodes means a smaller over-prediction penalty but
     # lower recall. The two effects pull opposite ways, so the optimum is empirical.
