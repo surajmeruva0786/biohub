@@ -5,28 +5,28 @@ locally against the official metric.
 
 ## Status
 
-On 24 samples balanced across both embryos the pipeline scores **0.7261**
+On 24 samples balanced across both embryos the pipeline scores **0.7745**
 adjusted edge Jaccard, against **0.4919** for the voxel-percentile baseline on
-the same samples — **+48%**.
+the same samples — **+57%**.
 
 | Question | Answer |
 | --- | --- |
-| Balanced offline score | **0.7261** adjusted edge Jaccard |
+| Balanced offline score | **0.7745** adjusted edge Jaccard |
 | Previous (voxel percentile) | 0.4919 — same samples, same linker |
 | Single-embryo `44b6` score | 0.7674 — measured earlier, not representative |
 | Division Jaccard | 0.000 — forfeit, see [Divisions](#divisions-are-a-low-yield-target) |
 | Submittable? | Not yet — see [Submitting](#submitting-is-notebook-only) |
 
-Tuned settings (sigma sweep still open — see below):
+Tuned settings:
 
 | Parameter | Value |
 | --- | --- |
 | `threshold` | `otsu` (on peak responses) |
 | `threshold_scale` | 0.7 |
-| `sigma_um` | 1.0 — and still rising at the edge of the sweep |
+| `sigma_um` | 1.7 |
 | `max_link_um` | 6.0 |
 | `prune_isolated` | yes |
-| `min_track_len` | 8 |
+| `min_track_len` | 5 |
 
 Settled so far:
 
@@ -334,7 +334,11 @@ what `sweep_recall.py` indicated. At `threshold_scale` 0.7 with `track8`:
 | --- | --- | --- | --- | --- |
 | 0.6 | 0.6446 | 0.6438 | 0.908 | +0.10 |
 | 0.8 | 0.6829 | 0.6873 | 0.888 | +0.01 |
-| **1.0** | 0.7180 | **0.7261** | 0.875 | −0.05 |
+| 1.0 | 0.7180 | 0.7261 | 0.875 | −0.05 |
+| 1.3 | 0.7530 | 0.7604 | 0.901 | −0.05 |
+| **1.7** | 0.7624 | **0.7745** | 0.890 | −0.13 |
+| 2.0 | 0.7590 | 0.7741 | 0.867 | −0.19 |
+| 2.5 | 0.7509 | 0.7703 | 0.859 | −0.26 |
 
 Node recall *falls* across this range while the score rises by 8 points. The
 recall sweep was the right instrument while a fixed percentile was
@@ -344,9 +348,11 @@ sigma buys marginally more detected cells at the cost of ragged centroids that
 link badly. Once the count problem was fixed, linking precision became what
 moves the score, and that prefers larger, smoother blobs.
 
-Two claims committed earlier were wrong as a result, both from reading a curve
-before it was complete: `threshold_scale` 0.5 (0.7 is better) and `sigma` 0.6
-(1.0 is better, and the sweep has not yet found the top).
+The peak is at 1.7, nearly three times the value the recall sweep chose, and
+the curve is flat between 1.7 and 2.0 before declining. Two claims committed
+earlier were wrong as a result, both from reading a curve before it was
+complete: `threshold_scale` 0.5 (0.7 is better) and `sigma` 0.6 (1.7 is
+better). The pruning optimum moved with sigma too, from `track8` to `track5`.
 
 Note the node ratio has gone **negative**. The penalty is
 `1 − 0.1 · (T_pred − T_true) / T_true`, so under-prediction yields a factor
