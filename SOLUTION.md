@@ -5,33 +5,39 @@ locally against the official metric.
 
 ## Status
 
-Measured on 8 balanced training samples, the current best offline setting is
-`prune_isolated` at a 5 µm gate: **adjusted edge Jaccard 0.7674**, against
-0.7592 for the previous baseline.
+On a balanced sample of both embryos the pipeline scores **0.5556** adjusted
+edge Jaccard. The 0.7674 measured earlier was on `44b6` alone and did not
+survive contact with the second embryo — see
+[A fixed percentile cannot set the detection count](#a-fixed-percentile-cannot-set-the-detection-count),
+which is both the reason and the fix now in place.
 
 | Question | Answer |
 | --- | --- |
-| Best offline score | 0.7674 adjusted edge Jaccard |
+| Balanced offline score | 0.5556 adjusted edge Jaccard |
+| Single-embryo score | 0.7674 — not representative |
 | Division Jaccard | 0.000 — forfeit, see [Divisions](#divisions-are-a-low-yield-target) |
-| Detections cached | 140 samples at sigma 1.0, 20 at sigma 0.6 |
 | Submittable? | Not yet — see [Submitting](#submitting-is-notebook-only) |
 
 Settled so far:
 
-- **Detection recall is the binding constraint**, not linking cleverness.
-- **sigma 0.6 recalls 0.979 against 1.0's 0.948** at 1.4× the detections;
-  whether that nets out after the over-prediction penalty is still open.
+- **Detection *count* is the dominant term**, through the over-prediction
+  penalty. A fixed voxel percentile over-detects by up to 78× on sparse
+  samples; Otsu over peak responses self-calibrates and is now the default.
+- **Detection recall is the next constraint**, not linking cleverness — edge
+  FP and FN track node recall closely.
+- sigma 0.6 recalls 0.979 against 1.0's 0.948 at 1.4× the detections.
 - A 5 µm gate beats 6 and 7 once isolated nodes are pruned.
-- Detection density must stay high — truncating to 500/frame costs more in
-  recall than it returns in penalty relief.
 - Evaluation must be balanced across embryos; a sorted prefix is single-embryo
-  and measures the wrong thing.
+  and measures the wrong thing. This was not a small correction — it moved the
+  headline number by 0.21.
 
 Open, in priority order:
 
-1. Score sigma 0.6 end to end (detections are cached, experiment not yet run).
-2. Train the linker on the full stratified set and wire it into the cost.
-3. Divisions — currently contributing nothing.
+1. Re-cache with Otsu and re-score everything; every number above predates it.
+2. Retune sigma and gate against Otsu — the old optima were fitted to a
+   threshold that no longer exists.
+3. Train the linker on the full stratified set and wire it into the cost.
+4. Divisions — currently contributing nothing.
 
 ### Submitting is notebook-only
 
@@ -194,6 +200,45 @@ So sigma 0.6 at percentile 90 is the best recall per detection. It is still a
 trade rather than a free win — 637 detections/frame against 448 raises the node
 count that the penalty acts on — so it has to be scored end to end, not adopted
 on recall alone.
+
+### A fixed percentile cannot set the detection count
+
+Scored across both embryos rather than a single-embryo prefix, the adjusted
+edge Jaccard is **0.5556**, not the 0.7674 measured on `44b6` alone. Raw edge
+quality barely moved (0.715 against 0.795) — almost the entire gap is the
+over-prediction penalty:
+
+| Embryo | Detections | True estimate | Node ratio | Penalty factor |
+| --- | --- | --- | --- | --- |
+| `44b6` | 43,249 | 35,810 | +0.48 | 0.95 |
+| `6bba` | 52,094 | **15,275** | **+5.53** | **0.45** |
+
+Half the score on `6bba` is destroyed before linking is even considered.
+
+The cause is the threshold. Taking the 90th percentile of the DoG response
+keeps a fixed *fraction of voxels*, so the detection count is set by the volume
+size rather than by how many cells are in it — it returns roughly the same
+number whether the frame holds 700 cells or 48. On the sparsest sample this
+over-detects by **78×**.
+
+**Otsu's threshold on peak responses adapts.** The voxel histogram is useless
+for this — it is overwhelmingly background, and its optimal split lands far
+below any cell. But local maxima are *already* a mixture of two populations,
+real cells and noise peaks, which is exactly the shape Otsu assumes. Measured
+against true cells per frame it tracks across a 15× range of densities:
+
+| Sample | True cells/frame | Percentile-90 | Otsu |
+| --- | --- | --- | --- |
+| `6bba_07477033` | 48 | 3768 | **49** |
+| `6bba_062c8d37` | 60 | 2401 | **45** |
+| `6bba_05b6850b` | 64 | 2006 | **53** |
+| `6bba_05db0fb1` | 698 | 829 | **670** |
+| `44b6_0113de3b` | 258 | 465 | **239** |
+| `44b6_0db75fae` | 153 | 217 | **166** |
+
+No per-sample tuning is involved — the threshold is computed per frame from
+that frame's own peaks, which is what makes it usable on a hidden test set
+where `estimated_number_of_nodes` is not readable.
 
 ### Evaluating on one embryo measures the wrong thing
 
