@@ -94,6 +94,11 @@ def main() -> None:
     ap.add_argument("--percentiles", type=float, nargs="+", default=[90.0, 80.0])
     ap.add_argument("--separations", type=float, nargs="+", default=[2.5])
     ap.add_argument("--backgrounds", type=float, nargs="+", default=[4.0])
+    ap.add_argument(
+        "--threshold",
+        default="percentile",
+        choices=["percentile", "otsu"],
+    )
     args = ap.parse_args()
 
     samples = select_samples(
@@ -117,6 +122,7 @@ def main() -> None:
             intensity_percentile=pct,
             min_separation_um=sep,
             background_um=bg,
+            threshold=args.threshold,
         )
         t0 = time.time()
         with ProcessPoolExecutor(max_workers=args.workers) as pool:

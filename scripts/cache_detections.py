@@ -72,6 +72,13 @@ def main() -> None:
     ap.add_argument("--separation-um", type=float, default=2.5)
     ap.add_argument("--percentile", type=float, default=90.0)
     ap.add_argument("--background-um", type=float, default=4.0)
+    ap.add_argument(
+        "--threshold",
+        default="percentile",
+        choices=["percentile", "otsu"],
+        help="otsu adapts the count to the frame; percentile fixes a voxel fraction",
+    )
+    ap.add_argument("--peak-percentile", type=float, default=0.0)
     args = ap.parse_args()
 
     # Detections depend on these, so a changed setting needs its own directory --
@@ -82,6 +89,8 @@ def main() -> None:
         min_separation_um=args.separation_um,
         intensity_percentile=args.percentile,
         background_um=args.background_um,
+        threshold=args.threshold,
+        peak_percentile=args.peak_percentile,
     )
 
     cache_dir = Path(args.out)

@@ -80,6 +80,7 @@ def detect_timepoint_gpu(
     background_um: float = 4.0,
     max_cells: int | None = None,
     threshold: str = "percentile",
+    threshold_scale: float = 1.0,
     peak_percentile: float = 0.0,
     device: str = "cuda",
 ) -> np.ndarray:
@@ -135,7 +136,11 @@ def detect_timepoint_gpu(
         from .detect import _otsu
 
         host = vals.detach().cpu().numpy()
-        keep = torch.as_tensor(host > _otsu(host), device=vals.device)
+        cut = _otsu(host)
+        if threshold_scale != 1.0 and np.isfinite(cut) and len(host):
+            lo = float(host.min())
+            cut = lo + (cut - lo) * threshold_scale
+        keep = torch.as_tensor(host > cut, device=vals.device)
         if peak_percentile > 0 and bool(keep.any()):
             kept = host[keep.cpu().numpy()]
             keep &= torch.as_tensor(

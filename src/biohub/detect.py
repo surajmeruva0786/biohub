@@ -61,6 +61,7 @@ def detect_timepoint(
     background_um: float = 4.0,
     max_cells: int | None = None,
     threshold: str = "percentile",
+    threshold_scale: float = 1.0,
     peak_percentile: float = 0.0,
 ) -> np.ndarray:
     """Detect cell centroids in one ``(Z, Y, X)`` volume.
@@ -104,7 +105,19 @@ def detect_timepoint(
         # the same count whatever the true cell count is -- which is how one
         # embryo ends up over-predicted 5.5x while another sits at 0.5x. Otsu
         # over peak responses adapts to how many peaks actually look like cells.
-        keep = response > _otsu(response)
+        #
+        # threshold_scale slides the cut between "keep every peak" (0.0) and
+        # Otsu's split (1.0), and past it above that. Otsu alone is stricter
+        # than the score wants: it costs 13 points of node recall to remove
+        # over-prediction, and the metric charges far more for a missed cell --
+        # two lost edges, plus the false positive its orphaned partner makes --
+        # than for a spare node, which costs 0.1 of its share of the penalty.
+        cut = _otsu(response)
+        if threshold_scale != 1.0 and np.isfinite(cut) and len(response):
+            lo = float(response.min())
+            cut = lo + (cut - lo) * threshold_scale
+
+        keep = response > cut
         coords, response = coords[keep], response[keep]
         if peak_percentile > 0 and len(response):
             keep = response > np.percentile(response, peak_percentile)
