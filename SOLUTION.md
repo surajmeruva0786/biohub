@@ -1,7 +1,49 @@
 # Approach
 
-Detect-and-link baseline for the Biohub cell tracking competition, scored
+Detect-and-link pipeline for the Biohub cell tracking competition, scored
 locally against the official metric.
+
+## Status
+
+Measured on 8 balanced training samples, the current best offline setting is
+`prune_isolated` at a 5 µm gate: **adjusted edge Jaccard 0.7674**, against
+0.7592 for the previous baseline.
+
+| Question | Answer |
+| --- | --- |
+| Best offline score | 0.7674 adjusted edge Jaccard |
+| Division Jaccard | 0.000 — forfeit, see [Divisions](#divisions-are-a-low-yield-target) |
+| Detections cached | 140 samples at sigma 1.0, 20 at sigma 0.6 |
+| Submittable? | Not yet — see [Submitting](#submitting-is-notebook-only) |
+
+Settled so far:
+
+- **Detection recall is the binding constraint**, not linking cleverness.
+- **sigma 0.6 recalls 0.979 against 1.0's 0.948** at 1.4× the detections;
+  whether that nets out after the over-prediction penalty is still open.
+- A 5 µm gate beats 6 and 7 once isolated nodes are pruned.
+- Detection density must stay high — truncating to 500/frame costs more in
+  recall than it returns in penalty relief.
+- Evaluation must be balanced across embryos; a sorted prefix is single-embryo
+  and measures the wrong thing.
+
+Open, in priority order:
+
+1. Score sigma 0.6 end to end (detections are cached, experiment not yet run).
+2. Train the linker on the full stratified set and wire it into the cost.
+3. Divisions — currently contributing nothing.
+
+### Submitting is notebook-only
+
+This is a code competition: the score comes from rerunning a notebook against
+a hidden test set roughly the size of the training set, with internet
+disabled. A `submission.csv` produced on this machine is therefore **not
+submittable** — the public `test/` folder holds 4 samples copied from train,
+so a local run is a format check and a smoke test, not a score.
+
+`scripts/make_kaggle_notebook.py` generates the single self-contained file that
+does count, bundling the package in dependency order so the submitted code
+cannot drift from the code the experiments below validated.
 
 ## Reading the metric
 
@@ -205,6 +247,46 @@ This is worth most exactly where the baseline is weakest — sample
 `44b6_0c582fdc` went from 0.476 to 0.562 edge Jaccard — and is roughly neutral
 on samples that already track well.
 
+### Pruning nodes that cannot earn a true positive
+
+The adjusted Jaccard scales the raw Jaccard by
+`1 − 0.1 · (T_pred − T_true) / T_true`, so every predicted node carries a fixed
+cost whether or not it participates in a correct link. A node with no incident
+edge can never contribute a TP, and because node matching is one-to-one per
+timepoint it can absorb a ground-truth cell's match away from the detection
+that *is* linked — turning a would-be TP into an FN.
+
+Measured over 8 balanced samples:
+
+| Variant | Edge Jaccard | Adjusted | Node ratio |
+| --- | --- | --- | --- |
+| baseline | 0.7879 | 0.7592 | +0.50 |
+| **prune isolated** | **0.7950** | **0.7674** | +0.48 |
+| prune + min track 3 | 0.7919 | 0.7654 | +0.47 |
+
+Pruning isolated nodes is a small, free gain. Pruning *short tracks* is not:
+by 3 frames it already costs more in lost true positives than it returns in
+penalty relief, and the loss grows with the threshold. Only ~1.2% of nodes are
+isolated at this density, which caps the size of the win.
+
+### Divisions are a low-yield target
+
+Division Jaccard is currently **0.000** — one-to-one assignment caps out-degree
+at 1, so the graph contains no forks at all and the entire 0.1-weighted term is
+forfeit. `divide.py` proposes second children, but adding them did not move the
+score, and the reason is worth recording before anyone tries again:
+**there are 1 ground-truth divisions across 8 samples.** Annotated divisions
+are rare enough that the term is nearly unmeasurable at this sample count, and
+the 647 forks the heuristic proposed produced no true positives.
+
+The asymmetry that makes the attempt tempting is real — a fork is only counted
+as a false positive when there is local ground-truth evidence to judge it
+against, so with under 1% of cells annotated most speculative forks are ignored
+outright. But recall on a target this sparse needs the fork placed almost
+exactly right, and geometry alone does not do that. This is worth revisiting on
+the full 199-sample set, where enough GT divisions exist to tune against; it is
+not worth guessing at on eight.
+
 ## Reproducing
 
 ```bash
@@ -213,9 +295,17 @@ git clone https://github.com/royerlab/kaggle-cell-tracking-competition reference
 
 python scripts/bench_gpu.py                     # verify CUDA parity with SciPy
 python scripts/cache_detections.py --limit 140  # pay for detection once
+python scripts/sweep_recall.py --limit 20       # detection params vs node recall
 python scripts/experiment.py --limit 40         # A/B pipeline variants
-python scripts/predict.py --out submission.csv  # write a submission
+python scripts/train_linker.py --holdout-embryo 6bba
+python scripts/predict.py --out submission.csv  # local format check only
+python scripts/make_kaggle_notebook.py          # the file that actually submits
 ```
+
+`cache_detections.py --out <dir> --sigma-um <s>` builds a second cache for a
+different detection setting, and `experiment.py --cache <dir>` scores against
+it — detections depend on those parameters, so each setting needs its own
+directory rather than being mixed into one.
 
 ## Environment note
 
