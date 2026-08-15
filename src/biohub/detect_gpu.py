@@ -79,6 +79,8 @@ def detect_timepoint_gpu(
     intensity_percentile: float = 90.0,
     background_um: float = 4.0,
     max_cells: int | None = None,
+    threshold: str = "percentile",
+    peak_percentile: float = 0.0,
     device: str = "cuda",
 ) -> np.ndarray:
     """GPU equivalent of :func:`biohub.detect.detect_timepoint`.
@@ -108,21 +110,41 @@ def detect_timepoint_gpu(
     )
     maxima = F.max_pool3d(padded, kernel_size=size, stride=1)[0, 0]
 
-    # torch.quantile caps out around 16M elements; a 64x256x256 frame is 4.2M,
-    # but fall back to sorting if a larger volume ever arrives.
-    flat = dog.reshape(-1)
-    q = intensity_percentile / 100.0
-    if flat.numel() <= 16_000_000:
-        thresh = torch.quantile(flat, q)
-    else:
-        thresh = torch.kthvalue(flat, max(1, int(q * flat.numel()))).values
+    is_peak = dog == maxima
+    if threshold == "percentile":
+        # torch.quantile caps out around 16M elements; a 64x256x256 frame is
+        # 4.2M, but fall back to sorting if a larger volume ever arrives.
+        flat = dog.reshape(-1)
+        q = intensity_percentile / 100.0
+        if flat.numel() <= 16_000_000:
+            cut = torch.quantile(flat, q)
+        else:
+            cut = torch.kthvalue(flat, max(1, int(q * flat.numel()))).values
+        is_peak = is_peak & (dog > cut)
 
-    is_peak = (dog == maxima) & (dog > thresh)
     idx = torch.nonzero(is_peak, as_tuple=False)
     if idx.numel() == 0:
         return np.zeros((0, 3), dtype=np.int64)
 
     vals = dog[is_peak]
+
+    if threshold == "otsu":
+        # Peaks number in the thousands, so the split is computed on the host
+        # against the shared SciPy implementation -- keeping one definition of
+        # the threshold matters more here than saving a negligible transfer.
+        from .detect import _otsu
+
+        host = vals.detach().cpu().numpy()
+        keep = torch.as_tensor(host > _otsu(host), device=vals.device)
+        if peak_percentile > 0 and bool(keep.any()):
+            kept = host[keep.cpu().numpy()]
+            keep &= torch.as_tensor(
+                host > np.percentile(kept, peak_percentile), device=vals.device
+            )
+        idx, vals = idx[keep], vals[keep]
+        if idx.numel() == 0:
+            return np.zeros((0, 3), dtype=np.int64)
+
     order = torch.argsort(vals, descending=True)
     if max_cells is not None:
         order = order[:max_cells]
