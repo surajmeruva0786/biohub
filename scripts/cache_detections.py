@@ -78,6 +78,12 @@ def main() -> None:
         choices=["percentile", "otsu"],
         help="otsu adapts the count to the frame; percentile fixes a voxel fraction",
     )
+    ap.add_argument(
+        "--threshold-scale",
+        type=float,
+        default=1.0,
+        help="0 keeps every peak, 1 is Otsu's split; below 1 trades nodes for recall",
+    )
     ap.add_argument("--peak-percentile", type=float, default=0.0)
     args = ap.parse_args()
 
@@ -90,6 +96,7 @@ def main() -> None:
         intensity_percentile=args.percentile,
         background_um=args.background_um,
         threshold=args.threshold,
+        threshold_scale=args.threshold_scale,
         peak_percentile=args.peak_percentile,
     )
 

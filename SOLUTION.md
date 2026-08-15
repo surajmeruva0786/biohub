@@ -5,16 +5,15 @@ locally against the official metric.
 
 ## Status
 
-On a balanced sample of both embryos the pipeline scores **0.5556** adjusted
-edge Jaccard. The 0.7674 measured earlier was on `44b6` alone and did not
-survive contact with the second embryo — see
-[A fixed percentile cannot set the detection count](#a-fixed-percentile-cannot-set-the-detection-count),
-which is both the reason and the fix now in place.
+On 40 samples balanced across both embryos the pipeline scores **0.5830**
+adjusted edge Jaccard, using Otsu thresholding, a 5 µm gate, and short-track
+pruning.
 
 | Question | Answer |
 | --- | --- |
-| Balanced offline score | 0.5556 adjusted edge Jaccard |
-| Single-embryo score | 0.7674 — not representative |
+| Balanced offline score | **0.5830** adjusted edge Jaccard |
+| Previous (voxel percentile) | 0.4919 — same samples, same linker |
+| Single-embryo `44b6` score | 0.7674 — measured earlier, not representative |
 | Division Jaccard | 0.000 — forfeit, see [Divisions](#divisions-are-a-low-yield-target) |
 | Submittable? | Not yet — see [Submitting](#submitting-is-notebook-only) |
 
@@ -22,20 +21,22 @@ Settled so far:
 
 - **Detection *count* is the dominant term**, through the over-prediction
   penalty. A fixed voxel percentile over-detects by up to 78× on sparse
-  samples; Otsu over peak responses self-calibrates and is now the default.
-- **Detection recall is the next constraint**, not linking cleverness — edge
-  FP and FN track node recall closely.
-- sigma 0.6 recalls 0.979 against 1.0's 0.948 at 1.4× the detections.
-- A 5 µm gate beats 6 and 7 once isolated nodes are pruned.
+  samples; Otsu over peak responses self-calibrates. Worth **+18.5%**, and it
+  drives the node ratio from +3.33 to +0.04.
+- **Detection recall is now the binding constraint** at 0.872 — edge FP and FN
+  both track it, and the penalty has stopped costing anything.
 - Evaluation must be balanced across embryos; a sorted prefix is single-embryo
-  and measures the wrong thing. This was not a small correction — it moved the
-  headline number by 0.21.
+  and measures the wrong thing. Not a small correction — it moved the headline
+  number by 0.21, and it is what exposed the threshold bug.
+- A 5 µm gate beats 6 and 7. Short-track pruning helps slightly under Otsu
+  (0.5830 against 0.5794), having been neutral-to-harmful before.
 
 Open, in priority order:
 
-1. Re-cache with Otsu and re-score everything; every number above predates it.
-2. Retune sigma and gate against Otsu — the old optima were fitted to a
-   threshold that no longer exists.
+1. Sweep `threshold_scale` — recall is the constraint and the node budget is
+   free, so the optimum is below 1.0.
+2. Retune sigma against Otsu; the old sweep was fitted to a threshold that no
+   longer exists.
 3. Train the linker on the full stratified set and wire it into the cost.
 4. Divisions — currently contributing nothing.
 
@@ -239,6 +240,31 @@ against true cells per frame it tracks across a 15× range of densities:
 No per-sample tuning is involved — the threshold is computed per frame from
 that frame's own peaks, which is what makes it usable on a hidden test set
 where `estimated_number_of_nodes` is not readable.
+
+Scored end to end on 40 balanced samples:
+
+| Threshold | edge_J | **adj_J** | Node recall | Node ratio | Nodes/sample |
+| --- | --- | --- | --- | --- | --- |
+| percentile p90 | 0.7003 | 0.4919 | 0.956 | +3.33 | 50,799 |
+| **otsu** (+ track3) | 0.5825 | **0.5830** | 0.872 | **+0.04** | 26,640 |
+
+**+18.5%**, by exactly the predicted mechanism: the ratio collapses from +3.33
+to +0.04, so the penalty stops costing anything and `adj_J` converges on the
+raw `edge_J` (0.5830 against 0.5825). Predicted nodes halve, which also halves
+the submission file.
+
+It is not free — recall falls from 0.956 to 0.872. Otsu's split sits slightly
+*below* the true cell count, because it is tuned to separate two populations,
+not to hit a target density, and it does not know the metric's preferences are
+asymmetric: a missed cell costs two edges plus the FP its orphaned partner
+creates, while a spare node costs 0.1 of its share of the penalty.
+
+With the ratio at +0.04 there is now room to spend nodes on recall, which is
+what `threshold_scale` is for — it slides the cut between keeping every peak
+(0.0) and Otsu's split (1.0), keeping the per-frame adaptivity while making the
+operating point tunable. At 0.4 detection moves from just under the true count
+to just over it (279 against 258 true, 83 against 64, 878 against 698) without
+reintroducing the fixed-fraction behaviour that caused the 78× blow-up.
 
 ### Evaluating on one embryo measures the wrong thing
 
